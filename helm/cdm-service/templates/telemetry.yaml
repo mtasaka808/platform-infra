@@ -1,0 +1,18 @@
+{{- if .Values.istio.tracing.enabled }}
+# Configure Istio distributed tracing for this service.
+# Tempo receives traces via Zipkin protocol on port 9411.
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: {{ include "cdm-service.fullname" . }}
+  labels:
+    {{- include "cdm-service.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "cdm-service.selectorLabels" . | nindent 6 }}
+  tracing:
+  - providers:
+    - name: tempo
+    randomSamplingPercentage: {{ .Values.istio.tracing.samplingPercentage }}
+{{- end }}

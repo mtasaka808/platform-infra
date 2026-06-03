@@ -1,0 +1,14 @@
+# Deploy this ConfigMap to the monitoring namespace.
+# Grafana's sidecar (label: grafana_dashboard=1) auto-discovers and imports it.
+#
+#   kubectl apply -f helm/dashboards/configmap.yaml -n monitoring
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdm-platform-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  cdm-platform.json: |
+{{ .Files.Get "cdm-platform.json" | indent 4 }}

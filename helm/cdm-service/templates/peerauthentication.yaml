@@ -1,0 +1,16 @@
+{{- if .Values.istio.mtls.enabled }}
+# Enforce strict mTLS — all traffic to this service must be encrypted.
+# Requires Istio to be installed and the namespace to have istio-injection=enabled.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: {{ include "cdm-service.fullname" . }}
+  labels:
+    {{- include "cdm-service.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "cdm-service.selectorLabels" . | nindent 6 }}
+  mtls:
+    mode: {{ .Values.istio.mtls.mode }}
+{{- end }}

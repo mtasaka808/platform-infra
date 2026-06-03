@@ -98,3 +98,21 @@ topologySpreadConstraints:
   enabled: true
   maxSkew: 1
   topologyKey: topology.kubernetes.io/zone
+
+# ── Istio service mesh ────────────────────────────────────────────────────────
+istio:
+  # Sidecar injection is controlled at the namespace level (label istio-injection=enabled).
+  # Set podAnnotations.sidecar.istio.io/inject: "false" to opt a pod out.
+  mtls:
+    enabled: true
+    mode: STRICT     # STRICT = mTLS required; PERMISSIVE = mTLS + plaintext allowed
+  tracing:
+    enabled: true
+    samplingPercentage: 100   # lower to 1 in prod for high-traffic services
+
+# ── Prometheus metrics ────────────────────────────────────────────────────────
+metrics:
+  enabled: true
+  path: /metrics
+  interval: 30s
+  scrapeTimeout: 10s

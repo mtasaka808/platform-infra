@@ -1,13 +1,41 @@
 terraform {
   required_version = ">= 1.9"
   required_providers {
-    aws    = { source = "hashicorp/aws";    version = "~> 5.0" }
-    random = { source = "hashicorp/random"; version = "~> 3.0" }
+    aws        = { source = "hashicorp/aws";       version = "~> 5.0" }
+    random     = { source = "hashicorp/random";    version = "~> 3.0" }
+    helm       = { source = "hashicorp/helm";      version = "~> 2.16" }
+    kubernetes = { source = "hashicorp/kubernetes"; version = "~> 2.33" }
+    kubectl    = { source = "gavinbunney/kubectl"; version = "~> 1.14" }
   }
   backend "s3" {
     # Fill in: terraform/environments/dev/backend.tfvars
     # terraform init -backend-config=backend.tfvars
   }
+}
+
+# Helm and Kubernetes providers authenticate via the EKS cluster created above.
+# The data sources are evaluated after the cluster exists.
+data "aws_eks_cluster_auth" "this" { name = module.eks.cluster_name }
+
+provider "helm" {
+  kubernetes {
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+    token                  = data.aws_eks_cluster_auth.this.token
+  }
+}
+
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  token                  = data.aws_eks_cluster_auth.this.token
+}
+
+provider "kubectl" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  token                  = data.aws_eks_cluster_auth.this.token
+  load_config_file       = false
 }
 
 provider "aws" {
@@ -84,4 +112,19 @@ module "mq" {
   security_group_id = module.networking.mq_sg_id
   instance_type     = "mq.t3.micro"
   tags              = local.common_tags
+}
+
+module "addons" {
+  source = "../../modules/addons"
+
+  cluster_name     = module.eks.cluster_name
+  cluster_endpoint = module.eks.cluster_endpoint
+  aws_region       = var.aws_region
+  environment      = local.environment
+
+  karpenter_role_arn = module.eks.github_actions_ecr_role_arn  # placeholder — add karpenter IRSA
+  velero_role_arn    = module.eks.github_actions_ecr_role_arn  # placeholder — add velero IRSA
+  velero_bucket      = "${local.project}-${local.environment}-velero-backup"
+
+  grafana_admin_password = var.grafana_admin_password
 }

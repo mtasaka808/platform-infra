@@ -1,0 +1,19 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "cdm-service.fullname" . }}
+  labels:
+    {{- include "cdm-service.labels" . | nindent 4 }}
+    # This label is required for kube-prometheus-stack to discover this monitor
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      {{- include "cdm-service.selectorLabels" . | nindent 6 }}
+  endpoints:
+  - port: http
+    path: {{ .Values.metrics.path }}
+    interval: {{ .Values.metrics.interval }}
+    scrapeTimeout: {{ .Values.metrics.scrapeTimeout }}
+{{- end }}
