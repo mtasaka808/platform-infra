@@ -1,0 +1,24 @@
+image:
+  repository: "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/cdm/training-mgmt-ui"
+  tag: "dev-PLACEHOLDER"
+ingress:
+  enabled: true
+  host: "training-ui.dev.cdm.example.gov"
+  tls:
+    enabled: true
+    certificateArn: "arn:aws:acm:REGION:ACCOUNT_ID:certificate/CERT_ID"
+hpa:
+  minReplicas: 1
+  maxReplicas: 3
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 20
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10

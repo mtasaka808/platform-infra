@@ -1,0 +1,47 @@
+image:
+  repository: "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/cdm/grants-mgmt-api"
+  tag: "test-PLACEHOLDER"
+ingress:
+  enabled: true
+  host: api.test.cdm.example.gov
+  tls:
+    enabled: true
+    certificateArn: "arn:aws:acm:REGION:ACCOUNT_ID:certificate/CERT_ID"
+hpa:
+  minReplicas: 2
+  maxReplicas: 5
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 2000m
+    memory: 1Gi
+env:
+  - name: APP_ENV
+    value: prod
+  - name: PORT
+    value: "6099"
+  - name: APP_SERVICE_NAME
+    value: grants-mgmt-api
+  - name: APP_MODULE_NAME
+    value: grants-mgmt
+  - name: APP_MQ_EXCHANGE
+    value: app.events
+externalSecrets:
+  enabled: true
+  secrets:
+    - name: DATABASE_URL
+      remoteRef:
+        key: cdm/grants-mgmt-api/database-url
+        property: url
+    - name: APP_MQ_URL
+      remoteRef:
+        key: cdm/shared/rabbitmq-url
+        property: url
+    - name: APP_JWT_SECRET
+      remoteRef:
+        key: cdm/shared/jwt-secret
+    - name: APP_CORS_ORIGINS
+      remoteRef:
+        key: cdm/grants-mgmt-api/cors-origins

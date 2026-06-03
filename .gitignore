@@ -1,0 +1,21 @@
+# Terraform state and local files
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+.terraform.lock.hcl
+terraform.tfvars
+backend.tfvars
+*.tfplan
+tfplan
+
+# Credentials — never commit these
+*.pem
+*.key
+kubeconfig
+.kube/
+
+# Editor
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: cdm
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  description: CDM Platform — all environments
+  sourceRepos:
+  - https://github.com/mtasaka808/platform-infra.git
+  destinations:
+  - namespace: cdm-dev
+    server: https://kubernetes.default.svc
+  - namespace: cdm-test
+    server: https://kubernetes.default.svc
+  - namespace: cdm-prod
+    server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  roles:
+  - name: read-only
+    description: Read-only access for auditors
+    policies:
+    - p, proj:cdm:read-only, applications, get, cdm/*, allow

@@ -1,0 +1,100 @@
+replicaCount: 2
+
+image:
+  repository: ""   # set per environment: <account>.dkr.ecr.<region>.amazonaws.com/cdm/<service>
+  tag: ""          # set by CI bump-image-tag.sh
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8080
+  containerPort: 8080
+
+ingress:
+  enabled: false
+  className: alb
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /healthz
+  host: ""       # e.g. api.cdm.example.gov
+  path: /
+  pathType: Prefix
+  tls:
+    enabled: false
+    certificateArn: ""  # ACM certificate ARN
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+serviceAccount:
+  create: true
+  annotations: {}  # set to IRSA role ARN for services needing AWS access
+
+# Environment variables from plain values (non-sensitive)
+env: []
+
+# Secrets pulled from AWS Secrets Manager via External Secrets Operator
+externalSecrets:
+  enabled: false
+  refreshInterval: 1h
+  secrets: []
+  # - name: DATABASE_URL
+  #   remoteRef:
+  #     key: cdm/grants-mgmt-api/database-url
+  #     property: url
+
+persistence:
+  enabled: false
+  mountPath: /data
+  size: 1Gi
+  storageClass: gp3
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /health/ready
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+topologySpreadConstraints:
+  enabled: true
+  maxSkew: 1
+  topologyKey: topology.kubernetes.io/zone

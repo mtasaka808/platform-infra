@@ -1,0 +1,54 @@
+# grants-mgmt-api — dev environment overrides
+# image.tag is updated by CI scripts/bump-image-tag.sh on every merge to develop.
+image:
+  repository: "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/cdm/grants-mgmt-api"
+  tag: "dev-PLACEHOLDER"
+
+ingress:
+  enabled: true
+  host: api.dev.cdm.example.gov
+  tls:
+    enabled: true
+    certificateArn: "arn:aws:acm:REGION:ACCOUNT_ID:certificate/CERT_ID"
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 3
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+env:
+  - name: APP_ENV
+    value: dev
+  - name: PORT
+    value: "6099"
+  - name: APP_SERVICE_NAME
+    value: grants-mgmt-api
+  - name: APP_MODULE_NAME
+    value: grants-mgmt
+  - name: APP_MQ_EXCHANGE
+    value: app.events
+
+externalSecrets:
+  enabled: true
+  secrets:
+    - name: DATABASE_URL
+      remoteRef:
+        key: cdm/grants-mgmt-api/database-url
+        property: url
+    - name: APP_MQ_URL
+      remoteRef:
+        key: cdm/shared/rabbitmq-url
+        property: url
+    - name: APP_JWT_SECRET
+      remoteRef:
+        key: cdm/shared/jwt-secret
+    - name: APP_CORS_ORIGINS
+      remoteRef:
+        key: cdm/grants-mgmt-api/cors-origins

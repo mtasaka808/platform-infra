@@ -1,0 +1,31 @@
+name: Helm Lint & Template
+
+on:
+  pull_request:
+    paths:
+    - 'helm/**'
+    - 'environments/**'
+
+jobs:
+  lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: azure/setup-helm@v4
+      with:
+        version: "3.16"
+
+    - name: Lint chart
+      run: helm lint helm/cdm-service
+
+    - name: Template all service values (dev)
+      run: |
+        for f in environments/dev/apps/*.yaml; do
+          svc=$(basename "$f" .yaml)
+          echo "--- templating ${svc} ---"
+          helm template "${svc}" helm/cdm-service -f "${f}" --dry-run > /dev/null \
+            && echo "  ✓ ${svc}" \
+            || (echo "  ✗ ${svc}" && exit 1)
+        done

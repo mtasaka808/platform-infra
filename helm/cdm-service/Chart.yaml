@@ -1,0 +1,6 @@
+apiVersion: v2
+name: cdm-service
+description: Production Helm chart for CDM platform services
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

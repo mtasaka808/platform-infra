@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cdm-test
+  namespace: argocd
+spec:
+  generators:
+  - list:
+      elements:
+      - service: grants-mgmt-api
+      - service: grants-mgmt-ui
+      - service: training-mgmt-ui
+      - service: shell
+      - service: dsams-legacy
+      - service: dsams-acl
+      - service: cdm-data-platform
+  template:
+    metadata:
+      name: cdm-test-{{service}}
+      annotations:
+        argocd.argoproj.io/sync-wave: "{{ if eq .service \"grants-mgmt-api\" }}1{{ else }}2{{ end }}"
+    spec:
+      project: cdm
+      source:
+        repoURL: https://github.com/mtasaka808/platform-infra.git
+        targetRevision: main
+        path: helm/cdm-service
+        helm:
+          releaseName: "{{service}}"
+          valueFiles:
+          - ../../../environments/test/apps/{{service}}.yaml
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: cdm-test
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=true
+        - ServerSideApply=true
