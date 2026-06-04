@@ -68,14 +68,37 @@ spec:
         {{- end }}
         {{- end }}
         {{- end }}
-        {{- if .Values.persistence.enabled }}
         volumeMounts:
+        {{- if .Values.persistence.enabled }}
         - name: data
           mountPath: {{ .Values.persistence.mountPath }}
         {{- end }}
-      {{- if .Values.persistence.enabled }}
+        {{- if .Values.nginx.enabled }}
+        {{- range .Values.nginx.writablePaths }}
+        - name: nginx-writable-{{ . | replace "/" "-" | trimPrefix "-" }}
+          mountPath: {{ . }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.mfManifest.enabled }}
+        - name: mf-manifest
+          mountPath: /usr/share/nginx/html/module-federation.manifest.json
+          subPath: module-federation.manifest.json
+          readOnly: true
+        {{- end }}
       volumes:
+      {{- if .Values.persistence.enabled }}
       - name: data
         persistentVolumeClaim:
           claimName: {{ include "cdm-service.fullname" . }}-data
+      {{- end }}
+      {{- if .Values.nginx.enabled }}
+      {{- range .Values.nginx.writablePaths }}
+      - name: nginx-writable-{{ . | replace "/" "-" | trimPrefix "-" }}
+        emptyDir: {}
+      {{- end }}
+      {{- end }}
+      {{- if .Values.mfManifest.enabled }}
+      - name: mf-manifest
+        configMap:
+          name: {{ .Values.mfManifest.configMapName }}
       {{- end }}

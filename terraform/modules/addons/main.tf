@@ -582,6 +582,8 @@ resource "kubectl_manifest" "istio_gateway" {
 locals {
   cdm_virtual_services = {
     shell            = { host = "portal.${var.base_domain}";    service = "shell";            port = 8080; namespace = "cdm-${var.environment}" }
+    grants-mgmt-ui   = { host = "grants.${var.base_domain}";   service = "grants-mgmt-ui";   port = 8080; namespace = "cdm-${var.environment}" }
+    training-mgmt-ui = { host = "training.${var.base_domain}"; service = "training-mgmt-ui"; port = 8080; namespace = "cdm-${var.environment}" }
     grants-mgmt-api  = { host = "api.${var.base_domain}";       service = "grants-mgmt-api";  port = 6099; namespace = "cdm-${var.environment}" }
     dsams-legacy     = { host = "dsams.${var.base_domain}";     service = "dsams-legacy";     port = 8090; namespace = "cdm-${var.environment}" }
     dsams-acl        = { host = "acl.${var.base_domain}";       service = "dsams-acl";        port = 8091; namespace = "cdm-${var.environment}" }

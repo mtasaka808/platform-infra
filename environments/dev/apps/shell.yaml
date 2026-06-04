@@ -1,24 +1,41 @@
 image:
   repository: "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/cdm/shell"
   tag: "dev-PLACEHOLDER"
-ingress:
-  enabled: true
-  host: "shell.dev.cdm.example.gov"
-  tls:
-    enabled: true
-    certificateArn: "arn:aws:acm:REGION:ACCOUNT_ID:certificate/CERT_ID"
+
+service:
+  port: 8080
+  containerPort: 8080
+
 hpa:
   minReplicas: 1
   maxReplicas: 3
+
 livenessProbe:
   httpGet:
     path: /healthz
     port: http
   initialDelaySeconds: 10
   periodSeconds: 20
+
 readinessProbe:
   httpGet:
     path: /healthz
     port: http
   initialDelaySeconds: 5
   periodSeconds: 10
+  failureThreshold: 3
+
+nginx:
+  enabled: true
+
+# nginx runs as uid 101 (built-in nginx user in nginx:alpine)
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 101
+  fsGroup: 101
+
+# Override the baked MF manifest with cluster-internal URLs.
+# Apply environments/dev/apps/shell-mf-manifest.yaml first.
+mfManifest:
+  enabled: true
+  configMapName: shell-mf-manifest

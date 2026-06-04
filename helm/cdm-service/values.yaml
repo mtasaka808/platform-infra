@@ -94,6 +94,23 @@ containerSecurityContext:
   capabilities:
     drop: [ALL]
 
+# nginx services need writable mounts for pid file and cache.
+# Set nginx: true in the service values file to enable these emptyDirs.
+nginx:
+  enabled: false
+  # When true, mounts emptyDir volumes at the paths nginx writes at startup.
+  # The container security context readOnlyRootFilesystem stays true.
+  writablePaths:
+  - /tmp
+  - /var/cache/nginx
+  - /var/run
+
+# Override the MF manifest at runtime without rebuilding the image.
+# Shell only — mount a ConfigMap over the baked manifest.json.
+mfManifest:
+  enabled: false
+  configMapName: ""
+
 topologySpreadConstraints:
   enabled: true
   maxSkew: 1

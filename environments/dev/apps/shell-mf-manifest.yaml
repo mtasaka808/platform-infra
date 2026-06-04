@@ -1,0 +1,18 @@
+# ConfigMap mounted over the shell's baked module-federation.manifest.json.
+# Overrides the localhost URLs compiled into the image with the real k8s service
+# hostnames accessible from the user's browser via Istio VirtualServices.
+#
+# Update the URLs to match your base_domain when deploying.
+#
+# Deploy: kubectl apply -f shell-mf-manifest.yaml -n cdm-dev
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shell-mf-manifest
+  namespace: cdm-dev
+data:
+  module-federation.manifest.json: |
+    {
+      "grants-mgmt-ui":   "https://grants.dev.cdm.example.gov",
+      "training-mgmt-ui": "https://training.dev.cdm.example.gov"
+    }
