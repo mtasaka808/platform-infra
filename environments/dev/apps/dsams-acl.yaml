@@ -1,0 +1,61 @@
+image:
+  repository: "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/cdm/dsams-acl"
+  tag: "dev-PLACEHOLDER"
+
+service:
+  port: 8091
+  containerPort: 8091
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 1   # single replica — SQLite cannot be shared across pods
+
+persistence:
+  enabled: true
+  mountPath: /data
+  size: 500Mi
+  storageClass: gp3
+
+env:
+  - name: PORT
+    value: "8091"
+  - name: ACL_DB_PATH
+    value: /data/acl.db
+  # In-cluster service names — NOT localhost
+  - name: CDM_BASE_URL
+    value: http://grants-mgmt-api.cdm-dev.svc.cluster.local:6099
+  - name: DSAMS_BASE_URL
+    value: http://dsams-legacy.cdm-dev.svc.cluster.local:8090
+  - name: POLL_INTERVAL_MS
+    value: "5000"
+  - name: MQ_EXCHANGE
+    value: cdm.events
+
+externalSecrets:
+  enabled: true
+  secrets:
+    - name: MQ_URL
+      remoteRef:
+        key: cdm/shared/rabbitmq-url
+        property: url
+
+# tsx writes transpile cache to /tmp
+nginx:
+  enabled: true
+  writablePaths:
+  - /tmp
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3

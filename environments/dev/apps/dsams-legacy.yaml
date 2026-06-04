@@ -1,0 +1,46 @@
+image:
+  repository: "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/cdm/dsams-legacy"
+  tag: "dev-PLACEHOLDER"
+
+service:
+  port: 8090
+  containerPort: 8090
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 1   # single replica — SQLite cannot be shared across pods
+
+persistence:
+  enabled: true
+  mountPath: /data
+  size: 500Mi
+  storageClass: gp3
+
+env:
+  - name: PORT
+    value: "8090"
+  - name: DSAMS_DB_PATH
+    value: /data/dsams.db
+  - name: NODE_ENV
+    value: production
+
+# tsx writes transpile cache to /tmp — mount as emptyDir so readOnlyRootFilesystem stays true
+nginx:
+  enabled: true
+  writablePaths:
+  - /tmp
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3

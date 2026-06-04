@@ -4,6 +4,10 @@ image:
   repository: "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/cdm/grants-mgmt-api"
   tag: "dev-PLACEHOLDER"
 
+service:
+  port: 6099
+  containerPort: 6099
+
 ingress:
   enabled: true
   host: api.dev.cdm.example.gov
@@ -34,6 +38,13 @@ env:
     value: grants-mgmt
   - name: APP_MQ_EXCHANGE
     value: app.events
+
+# grants-mgmt-api is a compiled Node app (not tsx) so /tmp mount is precautionary
+# but harmless — keeps security context consistent with other Node services
+nginx:
+  enabled: true
+  writablePaths:
+  - /tmp
 
 externalSecrets:
   enabled: true

@@ -1,0 +1,54 @@
+image:
+  repository: "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/cdm/cdm-data-platform"
+  tag: "dev-PLACEHOLDER"
+
+service:
+  port: 8092
+  containerPort: 8092
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 1   # single replica — SQLite cannot be shared across pods
+
+persistence:
+  enabled: true
+  mountPath: /data
+  size: 1Gi
+  storageClass: gp3
+
+env:
+  - name: PORT
+    value: "8092"
+  - name: DATA_DB_PATH
+    value: /data/platform.db
+  - name: MQ_EXCHANGE
+    value: cdm.events
+
+externalSecrets:
+  enabled: true
+  secrets:
+    - name: MQ_URL
+      remoteRef:
+        key: cdm/shared/rabbitmq-url
+        property: url
+
+# tsx writes transpile cache to /tmp
+nginx:
+  enabled: true
+  writablePaths:
+  - /tmp
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3
