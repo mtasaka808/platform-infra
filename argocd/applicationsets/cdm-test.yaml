@@ -28,7 +28,7 @@ spec:
         helm:
           releaseName: "{{service}}"
           valueFiles:
-          - ../../../environments/test/apps/{{service}}.yaml
+          - ../../environments/test/apps/{{service}}.yaml
       destination:
         server: https://kubernetes.default.svc
         namespace: cdm-test

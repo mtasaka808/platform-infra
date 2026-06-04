@@ -28,7 +28,7 @@ spec:
         helm:
           releaseName: "{{service}}"
           valueFiles:
-          - ../../../environments/prod/apps/{{service}}.yaml
+          - ../../environments/prod/apps/{{service}}.yaml
       destination:
         server: https://kubernetes.default.svc
         namespace: cdm-prod
