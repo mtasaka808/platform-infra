@@ -2,7 +2,10 @@ terraform {
   required_version = ">= 1.9"
   required_providers {
     aws    = { source = "hashicorp/aws";    version = "~> 5.0" }
-    random = { source = "hashicorp/random"; version = "~> 3.0" }
+    random     = { source = "hashicorp/random";    version = "~> 3.0" }
+    helm       = { source = "hashicorp/helm";      version = "~> 2.16" }
+    kubernetes = { source = "hashicorp/kubernetes"; version = "~> 2.33" }
+    kubectl    = { source = "gavinbunney/kubectl"; version = "~> 1.14" }
   }
   backend "s3" {}
 }
@@ -76,4 +79,40 @@ module "mq" {
   security_group_id = module.networking.mq_sg_id
   instance_type     = "mq.m5.large"
   tags              = local.common_tags
+}
+
+data "aws_eks_cluster_auth" "this" { name = module.eks.cluster_name }
+
+provider "helm" {
+  kubernetes {
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+    token                  = data.aws_eks_cluster_auth.this.token
+  }
+}
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  token                  = data.aws_eks_cluster_auth.this.token
+}
+provider "kubectl" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  token                  = data.aws_eks_cluster_auth.this.token
+  load_config_file       = false
+}
+
+module "addons" {
+  source = "../../modules/addons"
+  cluster_name            = module.eks.cluster_name
+  cluster_endpoint        = module.eks.cluster_endpoint
+  aws_region              = var.aws_region
+  environment             = local.environment
+  base_domain             = var.base_domain
+  karpenter_role_arn       = module.eks.karpenter_role_arn
+  karpenter_node_role_name = module.eks.karpenter_node_role_name
+  karpenter_queue_name     = module.eks.karpenter_queue_name
+  velero_role_arn          = module.eks.velero_role_arn
+  velero_bucket            = module.eks.velero_bucket
+  grafana_admin_password   = var.grafana_admin_password
 }

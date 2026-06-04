@@ -3,12 +3,20 @@ variable "cluster_endpoint" { type = string }
 variable "aws_region"       { type = string }
 variable "environment"      { type = string }
 
-# IAM role ARNs (created by eks module or separately)
-variable "cert_manager_role_arn" { type = string; default = "" }
-variable "karpenter_role_arn"    { type = string }
-variable "velero_role_arn"       { type = string }
-variable "karpenter_queue_name"  { type = string; default = "" }
-variable "velero_bucket"         { type = string }
+# IAM role ARNs and supporting resources (outputs from eks module)
+variable "cert_manager_role_arn"     { type = string; default = "" }
+variable "karpenter_role_arn"        { type = string }
+variable "karpenter_node_role_name"  { type = string }
+variable "karpenter_queue_name"      { type = string }
+variable "velero_role_arn"           { type = string }
+variable "velero_bucket"             { type = string }
+
+# DNS base domain for Istio VirtualServices
+variable "base_domain" { type = string; description = "e.g. cdm.example.gov" }
+
+# Optional pre-existing S3 buckets for Loki/Tempo (empty = auto-create)
+variable "loki_s3_bucket"  { type = string; default = "" }
+variable "tempo_s3_bucket" { type = string; default = "" }
 
 # Secrets (inject from Secrets Manager or Vault in real usage)
 variable "grafana_admin_password" {

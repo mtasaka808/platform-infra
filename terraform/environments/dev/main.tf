@@ -117,14 +117,17 @@ module "mq" {
 module "addons" {
   source = "../../modules/addons"
 
-  cluster_name     = module.eks.cluster_name
-  cluster_endpoint = module.eks.cluster_endpoint
-  aws_region       = var.aws_region
-  environment      = local.environment
+  cluster_name            = module.eks.cluster_name
+  cluster_endpoint        = module.eks.cluster_endpoint
+  aws_region              = var.aws_region
+  environment             = local.environment
+  base_domain             = var.base_domain
 
-  karpenter_role_arn = module.eks.github_actions_ecr_role_arn  # placeholder — add karpenter IRSA
-  velero_role_arn    = module.eks.github_actions_ecr_role_arn  # placeholder — add velero IRSA
-  velero_bucket      = "${local.project}-${local.environment}-velero-backup"
+  karpenter_role_arn       = module.eks.karpenter_role_arn
+  karpenter_node_role_name = module.eks.karpenter_node_role_name
+  karpenter_queue_name     = module.eks.karpenter_queue_name
+  velero_role_arn          = module.eks.velero_role_arn
+  velero_bucket            = module.eks.velero_bucket
 
   grafana_admin_password = var.grafana_admin_password
 }

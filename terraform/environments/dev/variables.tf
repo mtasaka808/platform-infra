@@ -13,3 +13,8 @@ variable "grafana_admin_password" {
   sensitive = true
   default   = "changeme-before-prod"
 }
+
+variable "base_domain" {
+  type    = string
+  default = "dev.cdm.example.gov"
+}

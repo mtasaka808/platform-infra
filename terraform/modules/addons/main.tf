@@ -196,17 +196,22 @@ resource "helm_release" "loki" {
   create_namespace = true
   wait             = true
 
+  # S3 bucket created after addons module runs; reference via local
+  # In dev: uses local filesystem for quick setup; set loki_s3_bucket to switch to S3
   values = [yamlencode({
     loki = {
       auth_enabled = false
       commonConfig = { replication_factor = 1 }
-      storage      = { type = "filesystem" }
+      storage = local.loki_bucket != "" ? {
+        type = "s3"
+        s3   = { region = var.aws_region; bucketnames = local.loki_bucket }
+      } : { type = "filesystem" }
     }
     singleBinary = {
-      replicas = 1
+      replicas    = 1
       persistence = { enabled = true, size = "20Gi" }
     }
-    gateway  = { enabled = true }
+    gateway = { enabled = true }
   })]
 }
 
@@ -239,11 +244,16 @@ resource "helm_release" "tempo" {
 
   values = [yamlencode({
     traces = {
-      otlp  = { grpc = { enabled = true }, http = { enabled = true } }
+      otlp   = { grpc = { enabled = true }, http = { enabled = true } }
       zipkin = { enabled = true }
       jaeger = { thriftHttp = { enabled = true } }
     }
-    storage = { trace = { backend = "local" } }
+    storage = local.tempo_bucket != "" ? {
+      trace = {
+        backend = "s3"
+        s3 = { bucket = local.tempo_bucket; region = var.aws_region }
+      }
+    } : { trace = { backend = "local" } }
   })]
 }
 
@@ -318,6 +328,110 @@ resource "helm_release" "kyverno" {
   wait             = true
 }
 
+# Baseline policies — applied after Kyverno is ready
+resource "kubectl_manifest" "kyverno_disallow_privileged" {
+  depends_on = [helm_release.kyverno]
+  yaml_body  = yamlencode({
+    apiVersion = "kyverno.io/v1"
+    kind       = "ClusterPolicy"
+    metadata   = { name = "disallow-privileged-containers" }
+    spec = {
+      validationFailureAction = "Enforce"
+      rules = [{
+        name  = "check-privileged"
+        match = { resources = { kinds = ["Pod"] } }
+        validate = {
+          message = "Privileged containers are not allowed."
+          pattern = {
+            spec = {
+              containers = [{ "=(securityContext)" = { "=(privileged)" = "false | null" } }]
+            }
+          }
+        }
+      }]
+    }
+  })
+}
+
+resource "kubectl_manifest" "kyverno_require_non_root" {
+  depends_on = [helm_release.kyverno]
+  yaml_body  = yamlencode({
+    apiVersion = "kyverno.io/v1"
+    kind       = "ClusterPolicy"
+    metadata   = { name = "require-non-root-user" }
+    spec = {
+      validationFailureAction = "Enforce"
+      rules = [{
+        name  = "check-runasnonroot"
+        match = { resources = { kinds = ["Pod"] } }
+        validate = {
+          message = "Containers must not run as root. Set runAsNonRoot=true."
+          pattern = {
+            spec = {
+              "=(securityContext)" = { runAsNonRoot = true }
+            }
+          }
+        }
+      }]
+    }
+  })
+}
+
+resource "kubectl_manifest" "kyverno_require_resource_limits" {
+  depends_on = [helm_release.kyverno]
+  yaml_body  = yamlencode({
+    apiVersion = "kyverno.io/v1"
+    kind       = "ClusterPolicy"
+    metadata   = { name = "require-resource-limits" }
+    spec = {
+      validationFailureAction = "Warn"   # Warn first; switch to Enforce once all services comply
+      rules = [{
+        name  = "check-limits"
+        match = { resources = { kinds = ["Pod"] } }
+        validate = {
+          message = "CPU and memory limits are required for all containers."
+          pattern = {
+            spec = {
+              containers = [{
+                resources = {
+                  limits = {
+                    cpu    = "?*"
+                    memory = "?*"
+                  }
+                }
+              }]
+            }
+          }
+        }
+      }]
+    }
+  })
+}
+
+resource "kubectl_manifest" "kyverno_disallow_latest_tag" {
+  depends_on = [helm_release.kyverno]
+  yaml_body  = yamlencode({
+    apiVersion = "kyverno.io/v1"
+    kind       = "ClusterPolicy"
+    metadata   = { name = "disallow-latest-tag" }
+    spec = {
+      validationFailureAction = "Enforce"
+      rules = [{
+        name  = "check-image-tag"
+        match = { resources = { kinds = ["Pod"] } }
+        validate = {
+          message = "Image tag 'latest' is not allowed. Pin to a specific tag."
+          pattern = {
+            spec = {
+              containers = [{ image = "!*:latest" }]
+            }
+          }
+        }
+      }]
+    }
+  })
+}
+
 # ── Velero (backup) ───────────────────────────────────────────────────────────
 resource "helm_release" "velero" {
   name             = "velero"
@@ -360,4 +474,282 @@ resource "helm_release" "velero" {
       }
     }
   })]
+}
+
+# ── CDM application namespaces with Istio sidecar injection ──────────────────
+locals {
+  cdm_namespaces = ["cdm-dev", "cdm-test", "cdm-prod"]
+}
+
+resource "kubernetes_namespace" "cdm" {
+  for_each = toset(local.cdm_namespaces)
+  depends_on = [helm_release.istiod]
+  metadata {
+    name = each.key
+    labels = {
+      "istio-injection" = "enabled"
+    }
+  }
+}
+
+# ── Karpenter NodePool + EC2NodeClass ─────────────────────────────────────────
+resource "kubectl_manifest" "karpenter_node_class" {
+  depends_on = [helm_release.karpenter]
+  yaml_body  = yamlencode({
+    apiVersion = "karpenter.k8s.aws/v1"
+    kind       = "EC2NodeClass"
+    metadata   = { name = "default" }
+    spec = {
+      amiSelectorTerms   = [{ alias = "al2023@latest" }]
+      role               = var.karpenter_node_role_name
+      subnetSelectorTerms = [{
+        tags = { "karpenter.sh/discovery" = var.cluster_name }
+      }]
+      securityGroupSelectorTerms = [{
+        tags = { "karpenter.sh/discovery" = var.cluster_name }
+      }]
+      blockDeviceMappings = [{
+        deviceName = "/dev/xvda"
+        ebs = {
+          volumeSize          = "50Gi"
+          volumeType          = "gp3"
+          encrypted           = true
+          deleteOnTermination = true
+        }
+      }]
+      tags = { "karpenter.sh/discovery" = var.cluster_name }
+    }
+  })
+}
+
+resource "kubectl_manifest" "karpenter_node_pool" {
+  depends_on = [kubectl_manifest.karpenter_node_class]
+  yaml_body  = yamlencode({
+    apiVersion = "karpenter.sh/v1"
+    kind       = "NodePool"
+    metadata   = { name = "default" }
+    spec = {
+      template = {
+        spec = {
+          nodeClassRef = {
+            group = "karpenter.k8s.aws"
+            kind  = "EC2NodeClass"
+            name  = "default"
+          }
+          requirements = [
+            { key = "karpenter.sh/capacity-type"; operator = "In";  values = ["spot", "on-demand"] },
+            { key = "kubernetes.io/arch";         operator = "In";  values = ["amd64"] },
+            { key = "karpenter.k8s.aws/instance-category"; operator = "In"; values = ["c", "m", "r"] },
+            { key = "karpenter.k8s.aws/instance-generation"; operator = "Gt"; values = ["2"] },
+          ]
+        }
+      }
+      limits    = { cpu = "200" }
+      disruption = {
+        consolidationPolicy = "WhenEmptyOrUnderutilized"
+        consolidateAfter    = "1m"
+      }
+    }
+  })
+}
+
+# ── Istio Gateway (single shared ingress for all CDM services) ────────────────
+resource "kubectl_manifest" "istio_gateway" {
+  depends_on = [helm_release.istio_ingress]
+  yaml_body  = yamlencode({
+    apiVersion = "networking.istio.io/v1"
+    kind       = "Gateway"
+    metadata   = { name = "cdm-gateway"; namespace = local.istio_namespace }
+    spec = {
+      selector = { istio = "ingressgateway" }
+      servers  = [
+        {
+          port     = { number = 80; name = "http"; protocol = "HTTP" }
+          hosts    = ["*.${var.base_domain}"]
+          tls      = { httpsRedirect = true }
+        },
+        {
+          port     = { number = 443; name = "https"; protocol = "HTTPS" }
+          hosts    = ["*.${var.base_domain}"]
+          tls      = { mode = "SIMPLE"; credentialName = "cdm-tls-cert" }
+        }
+      ]
+    }
+  })
+}
+
+# VirtualService per external-facing service
+locals {
+  cdm_virtual_services = {
+    shell            = { host = "portal.${var.base_domain}";    service = "shell";            port = 8080; namespace = "cdm-${var.environment}" }
+    grants-mgmt-api  = { host = "api.${var.base_domain}";       service = "grants-mgmt-api";  port = 6099; namespace = "cdm-${var.environment}" }
+    dsams-legacy     = { host = "dsams.${var.base_domain}";     service = "dsams-legacy";     port = 8090; namespace = "cdm-${var.environment}" }
+    dsams-acl        = { host = "acl.${var.base_domain}";       service = "dsams-acl";        port = 8091; namespace = "cdm-${var.environment}" }
+    data-platform    = { host = "analytics.${var.base_domain}"; service = "cdm-data-platform"; port = 8092; namespace = "cdm-${var.environment}" }
+  }
+}
+
+resource "kubectl_manifest" "virtual_services" {
+  for_each   = local.cdm_virtual_services
+  depends_on = [kubectl_manifest.istio_gateway]
+  yaml_body  = yamlencode({
+    apiVersion = "networking.istio.io/v1"
+    kind       = "VirtualService"
+    metadata   = { name = each.key; namespace = local.istio_namespace }
+    spec = {
+      hosts    = [each.value.host]
+      gateways = ["${local.istio_namespace}/cdm-gateway"]
+      http     = [{
+        route = [{
+          destination = {
+            host = "${each.value.service}.${each.value.namespace}.svc.cluster.local"
+            port = { number = each.value.port }
+          }
+        }]
+        timeout = "30s"
+        retries = { attempts = 3; perTryTimeout = "10s"; retryOn = "5xx,reset,connect-failure" }
+      }]
+    }
+  })
+}
+
+# ── Loki S3 backend (production) ──────────────────────────────────────────────
+resource "aws_s3_bucket" "loki" {
+  count         = var.loki_s3_bucket != "" ? 0 : 1
+  bucket        = "${var.cluster_name}-loki-chunks"
+  force_destroy = var.environment != "prod"
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "loki" {
+  count  = var.loki_s3_bucket != "" ? 0 : 1
+  bucket = aws_s3_bucket.loki[0].id
+  rule { apply_server_side_encryption_by_default { sse_algorithm = "aws:kms" } }
+}
+
+locals {
+  loki_bucket = var.loki_s3_bucket != "" ? var.loki_s3_bucket : (length(aws_s3_bucket.loki) > 0 ? aws_s3_bucket.loki[0].id : "")
+}
+
+# ── Tempo S3 backend (production) ─────────────────────────────────────────────
+resource "aws_s3_bucket" "tempo" {
+  count         = var.tempo_s3_bucket != "" ? 0 : 1
+  bucket        = "${var.cluster_name}-tempo-traces"
+  force_destroy = var.environment != "prod"
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "tempo" {
+  count  = var.tempo_s3_bucket != "" ? 0 : 1
+  bucket = aws_s3_bucket.tempo[0].id
+  rule { apply_server_side_encryption_by_default { sse_algorithm = "aws:kms" } }
+}
+
+locals {
+  tempo_bucket = var.tempo_s3_bucket != "" ? var.tempo_s3_bucket : (length(aws_s3_bucket.tempo) > 0 ? aws_s3_bucket.tempo[0].id : "")
+}
+
+# ── AlertManager PrometheusRule — CDM platform signals ───────────────────────
+resource "kubectl_manifest" "cdm_alerts" {
+  depends_on = [helm_release.prometheus_stack]
+  yaml_body  = yamlencode({
+    apiVersion = "monitoring.coreos.com/v1"
+    kind       = "PrometheusRule"
+    metadata   = {
+      name      = "cdm-platform-alerts"
+      namespace = local.monitoring_namespace
+      labels    = { release = "kube-prometheus-stack" }
+    }
+    spec = {
+      groups = [
+        {
+          name = "cdm.api"
+          rules = [
+            {
+              alert = "GrantsApiHighErrorRate"
+              expr  = "sum(rate(istio_requests_total{destination_service=~\"grants-mgmt-api.*\",response_code=~\"5..\"}[5m])) / sum(rate(istio_requests_total{destination_service=~\"grants-mgmt-api.*\"}[5m])) > 0.05"
+              for   = "5m"
+              labels   = { severity = "critical"; team = "cdm-platform" }
+              annotations = {
+                summary     = "grants-mgmt-api error rate > 5%"
+                description = "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+              }
+            },
+            {
+              alert = "GrantsApiHighLatency"
+              expr  = "histogram_quantile(0.99, sum(rate(istio_request_duration_milliseconds_bucket{destination_service=~\"grants-mgmt-api.*\"}[5m])) by (le)) > 2000"
+              for   = "10m"
+              labels = { severity = "warning"; team = "cdm-platform" }
+              annotations = {
+                summary     = "grants-mgmt-api P99 latency > 2s"
+                description = "P99 latency is {{ $value }}ms."
+              }
+            }
+          ]
+        },
+        {
+          name = "cdm.pods"
+          rules = [
+            {
+              alert = "PodCrashLooping"
+              expr  = "rate(kube_pod_container_status_restarts_total{namespace=~\"cdm-.*\"}[15m]) * 60 * 15 > 5"
+              for   = "5m"
+              labels = { severity = "critical"; team = "cdm-platform" }
+              annotations = {
+                summary     = "Pod {{ $labels.pod }} is crash-looping"
+                description = "{{ $labels.pod }} in {{ $labels.namespace }} has restarted {{ $value }} times."
+              }
+            },
+            {
+              alert = "PodNotReady"
+              expr  = "sum by (pod, namespace) (kube_pod_status_phase{namespace=~\"cdm-.*\", phase=~\"Pending|Unknown\"}) > 0"
+              for   = "15m"
+              labels = { severity = "warning"; team = "cdm-platform" }
+              annotations = {
+                summary     = "Pod {{ $labels.pod }} not ready for 15m"
+                description = "Pod {{ $labels.pod }} in {{ $labels.namespace }} has been {{ $labels.phase }} for 15 minutes."
+              }
+            }
+          ]
+        },
+        {
+          name = "cdm.storage"
+          rules = [{
+            alert = "PVCUsageHigh"
+            expr  = "kubelet_volume_stats_used_bytes{namespace=~\"cdm-.*\"} / kubelet_volume_stats_capacity_bytes{namespace=~\"cdm-.*\"} > 0.8"
+            for   = "5m"
+            labels = { severity = "warning"; team = "cdm-platform" }
+            annotations = {
+              summary     = "PVC {{ $labels.persistentvolumeclaim }} > 80% full"
+              description = "{{ $value | humanizePercentage }} used in {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }}."
+            }
+          }]
+        },
+        {
+          name = "cdm.messaging"
+          rules = [{
+            alert = "RabbitMQQueueDepthHigh"
+            expr  = "sum by (queue) (rabbitmq_queue_messages{queue=~\"app\\.grants\\..*\"}) > 1000"
+            for   = "10m"
+            labels = { severity = "warning"; team = "cdm-platform" }
+            annotations = {
+              summary     = "RabbitMQ queue {{ $labels.queue }} depth > 1000"
+              description = "{{ $value }} messages pending. ACL bridge or data platform may be behind."
+            }
+          }]
+        }
+      ]
+    }
+  })
+}
+
+# ── Grafana CDM dashboard ConfigMap (inline JSON — no Helm templating) ────────
+resource "kubernetes_config_map" "cdm_grafana_dashboard" {
+  depends_on = [helm_release.prometheus_stack]
+  metadata {
+    name      = "cdm-platform-dashboard"
+    namespace = local.monitoring_namespace
+    labels    = { grafana_dashboard = "1" }
+  }
+  data = {
+    "cdm-platform.json" = file("${path.module}/dashboards/cdm-platform.json")
+  }
 }
